@@ -1,0 +1,143 @@
+plugins {
+    id 'com.github.johnrengelman.shadow' version '5.0.0'
+    id "com.diffplug.spotless" version "5.11.0"
+    id 'jacoco'
+}
+
+apply plugin: 'java'
+apply plugin: 'maven'
+apply plugin: 'application'
+
+group ''
+version '1.0-SNAPSHOT'
+
+mainClassName = ".scientistpocdropwizard.ServiceApplication"
+
+shadowJar {
+	mergeServiceFiles()
+	exclude 'META-INF/*.DSA'
+	exclude 'META-INF/*.RSA'
+}
+jar {
+	manifest {
+		attributes 'Main-Class': mainClassName
+	}
+}
+
+sourceSets {
+    main {
+        java {
+            srcDirs 'build/generated/source/proto/main/grpc'    // Include generated gRPC protobuf classes
+            srcDirs 'build/generated/source/proto/main/java'    // Include generated gRPC protobuf classes
+        }
+    }
+    integration {
+        java {
+            compileClasspath += main.output + test.output
+            runtimeClasspath += main.output + test.output
+            srcDir file("src/integration/java")
+        }
+        resources.srcDir file("src/integration/resources")
+    }
+}
+
+
+project.ext {
+    dropwizardVersion = '2.0.10'
+    mockitoVersion = '2.26.0'
+    testcontainersVersion = '1.6.0'
+    errorProneAnnotationsVersion = '2.3.4'
+    junitVersion = '5.6.2'
+    dropwizardGuicey = '5.0.0'
+    lombokVersion = '1.18.12'
+}
+
+repositories {
+    mavenLocal()
+    mavenCentral()
+    jcenter()
+    google()
+}
+
+dependencies {
+    compileOnly "org.projectlombok:lombok:${lombokVersion}"
+    annotationProcessor "org.projectlombok:lombok:${lombokVersion}"
+
+    compileOnly "ru.vyarus:dropwizard-guicey:${dropwizardGuicey}"
+
+    compileOnly "io.dropwizard:dropwizard-core:${dropwizardVersion}"
+    compileOnly "io.dropwizard:dropwizard-metrics-graphite:${dropwizardVersion}"
+    compileOnly "com.google.errorprone:error_prone_annotations:${errorProneAnnotationsVersion}"
+
+    testImplementation "io.dropwizard:dropwizard-testing:${dropwizardVersion}"
+    testImplementation "org.mockito:mockito-core:${mockitoVersion}"
+    testCompileOnly "org.projectlombok:lombok:${lombokVersion}"
+    testAnnotationProcessor "org.projectlombok:lombok:${lombokVersion}"
+
+    testImplementation("org.junit.jupiter:junit-jupiter:${junitVersion}")
+}
+
+task debug{ doLast {} }
+debug.dependsOn {
+    run {
+        jvmArgs '-agentlib:jdwp=transport=dt_socket,server=y,suspend=n,address=5005',
+                '-Dcom.sun.management.jmxremote',
+                '-Dcom.sun.management.jmxremote.port=1099',
+                '-Dcom.sun.management.jmxremote.rmi.port=1099',
+                '-Dcom.sun.management.jmxremote.local.only=false',
+                '-Dcom.sun.management.jmxremote.authenticate=false',
+                '-Dcom.sun.management.jmxremote.ssl=false',
+                "-Djava.rmi.server.hostname=${rmihost}"
+    }
+}
+
+jacoco {
+    toolVersion = "0.8.3"
+}
+
+run {
+    args 'server', 'dev.yml'
+}
+
+
+spotless {
+	// optional: limit format enforcement to just the files changed by this feature branch
+	ratchetFrom 'origin/main'
+
+	format 'misc', {
+		// define the files to apply `misc` to
+		target '*.gradle', '*.md', '.gitignore', 'Makefile'
+
+		// define the steps to apply to those files
+		trimTrailingWhitespace()
+		indentWithTabs() // or spaces. Takes an integer argument if you don't like 4
+		endWithNewline()
+	}
+	java {
+		// don't need to set target, it is inferred from java
+
+		// apply a specific flavor of google-java-format
+		googleJavaFormat('1.9').aosp()
+
+		// redefine the import order
+		importOrder()
+		removeUnusedImports()
+	}
+}
+
+compileJava {
+	options.compilerArgs.addAll(['--release', '11'])
+	dependsOn tasks.named("spotlessApply")
+}
+
+task installGitHooks(type: Copy) {
+	from new File(rootProject.rootDir, 'scripts/pre-commit')
+	into { new File(rootProject.rootDir, '.git/hooks') }
+	doLast {
+		project.exec {
+			commandLine('chmod',  '+x', '.git/hooks/pre-commit')
+		}
+	}
+}
+
+build.dependsOn installGitHooks
